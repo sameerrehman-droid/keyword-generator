@@ -404,12 +404,6 @@ export default function KeywordsManager() {
           >
             {suggestions.length ? "Edit keyword suggestions" : "Generate keywords"}
           </button>
-          {suggestions.length > 0 && (
-            <span className="text-[12px] text-black/60">
-              {keywords.filter((k) => suggestionKeySet.has(k.toLowerCase())).length} of{" "}
-              {suggestions.length} suggestions added
-            </span>
-          )}
         </div>
       )}
 
@@ -498,10 +492,7 @@ export default function KeywordsManager() {
                   </div>
                   <div className="flex items-center justify-between text-[12px]">
                     <span className="text-black/60">
-                      <span className="font-semibold text-black">{selectedCount}</span> selected ·{" "}
-                      <span className={slotsLeft <= 0 ? "font-semibold text-danger" : ""}>
-                        {Math.max(0, slotsLeft)} of {MAX_KEYWORDS} slots left
-                      </span>
+                      <span className="font-semibold text-black">{selectedCount}</span> selected
                     </span>
                     <span className="flex items-center gap-[12px]">
                       <button
@@ -509,7 +500,7 @@ export default function KeywordsManager() {
                         onClick={selectAllThatFit}
                         className="font-semibold text-link hover:underline"
                       >
-                        Select all that fit
+                        Select All
                       </button>
                       <button
                         type="button"
@@ -574,7 +565,7 @@ export default function KeywordsManager() {
                                 <span className="flex-1 text-black">{s.keyword}</span>
                                 {added && (
                                   <span className="rounded-full bg-pill px-[8px] py-[2px] text-[10px] font-semibold text-black/70">
-                                    Added
+                                    Active
                                   </span>
                                 )}
                               </label>
