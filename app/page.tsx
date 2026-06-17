@@ -1,4 +1,5 @@
-import KeywordsField from "./KeywordsField";
+import KeywordsManager from "./KeywordsManager";
+import { VariantProvider, VariantToggle } from "./VariantContext";
 import { Back, ChevronDown, Close, Desktop, Grid, Menu, Mobile, Plus } from "./icons";
 
 const NAV = ["Dashboard", "Partner Alerts", "Alerts", "Policies", "Email Templates"];
@@ -109,6 +110,7 @@ export default function Home() {
       </header>
 
       {/* Body */}
+      <VariantProvider>
       <main className="mx-auto w-full max-w-[1360px] px-[20px] py-[30px]">
         <h1 className="font-display text-[18px] font-bold text-black">Create Policy</h1>
 
@@ -119,6 +121,10 @@ export default function Home() {
           <Back className="size-[15px]" />
           Back to policy list
         </a>
+
+        <div className="mt-[16px] rounded-[6px] border border-edge bg-white px-[16px] py-[12px]">
+          <VariantToggle />
+        </div>
 
         <form className="mt-[20px] rounded-[2px] bg-white shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.1),0px_2px_4px_-2px_rgba(0,0,0,0.1)]">
           <div className="px-[30px] py-[15px]">
@@ -193,7 +199,7 @@ export default function Home() {
               alignTop
               description="Tell us what and where to search for initial collection of ads by adding keywords you would like to monitor."
             >
-              <KeywordsField />
+              <KeywordsManager />
             </Row>
 
             <Row
@@ -224,6 +230,7 @@ export default function Home() {
           </div>
         </form>
       </main>
+      </VariantProvider>
     </div>
   );
 }
