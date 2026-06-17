@@ -186,22 +186,13 @@ export default function KeywordsField() {
             {" · "}
             {cleanDomain(brandDomain)}
           </span>
-          <span className="flex items-center gap-[12px]">
-            <button
-              type="button"
-              onClick={handleGenerate}
-              className="font-semibold text-link hover:underline"
-            >
-              Regenerate
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowGenerator(true)}
-              className="text-link hover:underline"
-            >
-              Edit brand details
-            </button>
-          </span>
+          <button
+            type="button"
+            onClick={() => setShowGenerator(true)}
+            className="font-semibold text-link hover:underline"
+          >
+            Edit brand details
+          </button>
         </div>
       )}
 
