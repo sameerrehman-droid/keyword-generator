@@ -1,19 +1,30 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Close, Plus, Sparkle } from "./icons";
+import { Close, Plus } from "./icons";
 
 const MAX_KEYWORDS = 100;
 
-/** Build up to 10 realistic suggestions from a brand name + domain. */
-function buildSuggestions(brandRaw: string, domainRaw: string): string[] {
-  const brand = brandRaw.trim().toLowerCase();
-  const domain = domainRaw
+/** True when the value looks like a real domain / URL (with or without protocol). */
+function isValidDomain(raw: string): boolean {
+  const v = raw.trim();
+  if (!v) return false;
+  return /^(https?:\/\/)?([a-z0-9](-?[a-z0-9])*\.)+[a-z]{2,}(\/[^\s]*)?$/i.test(v);
+}
+
+function cleanDomain(raw: string): string {
+  return raw
     .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, "")
     .replace(/^www\./, "")
     .replace(/\/.*$/, "");
+}
+
+/** Build up to 10 realistic suggestions from a brand name + domain. */
+function buildSuggestions(brandRaw: string, domainRaw: string): string[] {
+  const brand = brandRaw.trim().toLowerCase();
+  const domain = cleanDomain(domainRaw);
 
   const suffixes = [
     "reviews",
@@ -33,7 +44,6 @@ function buildSuggestions(brandRaw: string, domainRaw: string): string[] {
   }
   if (domain) out.push(domain);
 
-  // Always aim for 10 suggestions.
   return out.slice(0, 10);
 }
 
@@ -46,17 +56,23 @@ function parseInput(value: string): string[] {
 }
 
 export default function KeywordsField() {
-  const [brandName, setBrandName] = useState("Acme");
-  const [brandDomain, setBrandDomain] = useState("www.acme.com");
-  const [keywords, setKeywords] = useState<string[]>(["acme coupons"]);
+  const [brandName, setBrandName] = useState("");
+  const [brandDomain, setBrandDomain] = useState("");
+  const [keywords, setKeywords] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Whether the brand-name/domain/generate block is shown. Collapses after the
+  // first successful generation so it stops competing with the keyword list.
+  const [showGenerator, setShowGenerator] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const overLimit = keywords.length > MAX_KEYWORDS;
   const atLimit = keywords.length >= MAX_KEYWORDS;
   const hasInput = input.trim().length > 0;
+  const domainValid = isValidDomain(brandDomain);
+  const canGenerate = brandName.trim().length > 0 && domainValid;
+  const domainError = brandDomain.trim().length > 0 && !domainValid;
 
   const pending = useMemo(() => parseInput(input), [input]);
 
@@ -102,7 +118,9 @@ export default function KeywordsField() {
   }
 
   function handleGenerate() {
+    if (!canGenerate) return;
     addKeywords(buildSuggestions(brandName, brandDomain));
+    setShowGenerator(false);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -110,7 +128,6 @@ export default function KeywordsField() {
       e.preventDefault();
       commitInput();
     } else if (e.key === "Backspace" && input.length === 0 && keywords.length > 0) {
-      // Quick-delete the last pill when the input is empty.
       removeKeyword(keywords.length - 1);
     }
   }
@@ -119,38 +136,74 @@ export default function KeywordsField() {
 
   return (
     <div className="flex flex-col gap-[10px]">
-      {/* Brand name / domain / generate */}
-      <div className="flex flex-wrap items-end gap-[16px]">
-        <label className="flex w-[260px] max-w-full flex-col gap-[8px]">
-          <span className="text-[12px] font-bold text-black">Brand name</span>
-          <input
-            value={brandName}
-            onChange={(e) => setBrandName(e.target.value)}
-            placeholder="e.g. Acme"
-            className="min-h-[32px] rounded-[6px] bg-field px-[8px] py-[7px] text-[12px] text-black outline-none placeholder:italic placeholder:text-black/50 focus:ring-2 focus:ring-save/40"
-          />
-        </label>
+      {/* Brand-based generator */}
+      {showGenerator ? (
+        <div className="flex flex-wrap items-start gap-[16px]">
+          <label className="flex w-[260px] max-w-full flex-col gap-[8px]">
+            <span className="text-[12px] font-bold text-black">Brand name</span>
+            <input
+              value={brandName}
+              onChange={(e) => setBrandName(e.target.value)}
+              placeholder="Enter brand name"
+              className="min-h-[32px] rounded-[6px] bg-field px-[8px] py-[7px] text-[12px] text-black outline-none placeholder:not-italic placeholder:text-black/50 focus:ring-2 focus:ring-save/40"
+            />
+          </label>
 
-        <label className="flex w-[260px] max-w-full flex-col gap-[8px]">
-          <span className="text-[12px] font-bold text-black">Brand domain</span>
-          <input
-            value={brandDomain}
-            onChange={(e) => setBrandDomain(e.target.value)}
-            placeholder="e.g. www.acme.com"
-            className="min-h-[32px] rounded-[6px] bg-field px-[8px] py-[7px] text-[12px] text-black outline-none placeholder:italic placeholder:text-black/50 focus:ring-2 focus:ring-save/40"
-          />
-        </label>
+          <label className="flex w-[260px] max-w-full flex-col gap-[8px]">
+            <span className="text-[12px] font-bold text-black">Brand domain</span>
+            <input
+              value={brandDomain}
+              onChange={(e) => setBrandDomain(e.target.value)}
+              placeholder="Enter brand domain"
+              aria-invalid={domainError}
+              className={[
+                "min-h-[32px] rounded-[6px] bg-field px-[8px] py-[7px] text-[12px] text-black outline-none placeholder:not-italic placeholder:text-black/50 focus:ring-2",
+                domainError ? "ring-1 ring-danger focus:ring-danger/50" : "focus:ring-save/40",
+              ].join(" ")}
+            />
+            {domainError && (
+              <span className="text-[11px] text-danger">Enter a valid domain, e.g. acme.com</span>
+            )}
+          </label>
 
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={!brandName.trim() && !brandDomain.trim()}
-          className="inline-flex min-h-[32px] items-center gap-[6px] rounded-[6px] bg-edge px-[12px] py-[8px] font-display text-[12px] font-bold text-ink shadow-[0px_1px_0.5px_rgba(0,0,0,0.14)] transition hover:bg-[#d2d2d2] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Sparkle className="size-[14px]" />
-          Generate keywords
-        </button>
-      </div>
+          <div className="flex flex-col gap-[8px]">
+            {/* spacer to align button with the inputs (matches the label row height) */}
+            <span className="hidden h-[18px] md:block" aria-hidden />
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={!canGenerate}
+              className="inline-flex min-h-[32px] items-center rounded-[6px] bg-edge px-[12px] py-[8px] font-display text-[12px] font-bold text-ink shadow-[0px_1px_0.5px_rgba(0,0,0,0.14)] transition hover:bg-[#d2d2d2] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-edge"
+            >
+              Generate keywords
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[6px] rounded-[6px] bg-field px-[12px] py-[8px] text-[12px] text-black">
+          <span className="text-black/70">
+            Suggestions generated from <span className="font-semibold text-black">{brandName}</span>
+            {" · "}
+            {cleanDomain(brandDomain)}
+          </span>
+          <span className="flex items-center gap-[12px]">
+            <button
+              type="button"
+              onClick={handleGenerate}
+              className="font-semibold text-link hover:underline"
+            >
+              Regenerate
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowGenerator(true)}
+              className="text-link hover:underline"
+            >
+              Edit brand details
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Keyword input box */}
       <div
@@ -158,11 +211,7 @@ export default function KeywordsField() {
         className={[
           "relative min-h-[100px] cursor-text rounded-[6px] bg-field p-[8px] pb-[44px] transition-colors",
           "border-2",
-          showError
-            ? "border-danger"
-            : focused
-              ? "border-save"
-              : "border-transparent",
+          showError ? "border-danger" : focused ? "border-save" : "border-transparent",
         ].join(" ")}
       >
         <div className="flex flex-wrap items-center gap-[5px]">
@@ -246,9 +295,7 @@ export default function KeywordsField() {
       )}
 
       {pending.length > 1 && hasInput && (
-        <p className="text-[11px] text-black/50">
-          Press Enter to add {pending.length} keywords.
-        </p>
+        <p className="text-[11px] text-black/50">Press Enter to add {pending.length} keywords.</p>
       )}
     </div>
   );
