@@ -2,10 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Close, Plus, Search } from "./icons";
-import { useVariant } from "./VariantContext";
 import {
   buildLargeSuggestions,
-  buildSuggestions,
   cleanDomain,
   isValidDomain,
   MAX_KEYWORDS,
@@ -21,25 +19,23 @@ function parseInput(value: string): string[] {
 }
 
 export default function KeywordsManager() {
-  const { variant } = useVariant();
-
-  // Shared across variants
-  const [brandName, setBrandName] = useState("");
-  const [brandDomain, setBrandDomain] = useState("");
+  // Keyword box
   const [keywords, setKeywords] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Inline variant
-  const [showGenerator, setShowGenerator] = useState(true);
+  // Brand / generator
+  const [brandName, setBrandName] = useState("");
+  const [brandDomain, setBrandDomain] = useState("");
 
-  // Drawer variant
+  // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [limitHit, setLimitHit] = useState(false);
+  const [editBrand, setEditBrand] = useState(true);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -60,7 +56,7 @@ export default function KeywordsManager() {
     [suggestions],
   );
 
-  // ----- shared keyword box helpers -----
+  // ----- keyword box helpers -----
   function addKeywords(candidates: string[]) {
     if (candidates.length === 0) return;
     const existing = new Set(keywords.map((k) => k.toLowerCase()));
@@ -109,27 +105,31 @@ export default function KeywordsManager() {
     }
   }
 
-  // ----- inline variant generate -----
-  function handleGenerateInline() {
-    if (!canGenerate) return;
-    addKeywords(buildSuggestions(brandName, brandDomain));
-    setShowGenerator(false);
-  }
-
-  // ----- drawer variant -----
-  // Selection reflects which suggestions are currently in the box (memory).
+  // ----- drawer -----
+  // Checked state always reflects current box membership (the "Active" keywords),
+  // plus whatever new picks the user has made this session.
   function syncSelectionToBox(list: Suggestion[]) {
-    setSelected(new Set(list.filter((s) => keywordsLower.has(s.keyword.toLowerCase())).map((s) => s.keyword.toLowerCase())));
+    setSelected(
+      new Set(
+        list
+          .filter((s) => keywordsLower.has(s.keyword.toLowerCase()))
+          .map((s) => s.keyword.toLowerCase()),
+      ),
+    );
   }
 
   function openDrawer() {
     setLimitHit(false);
     if (suggestions.length > 0) {
       syncSelectionToBox(suggestions);
+      setEditBrand(false);
     } else if (canGenerate) {
       const list = buildLargeSuggestions(brandName, brandDomain);
       setSuggestions(list);
       syncSelectionToBox(list);
+      setEditBrand(false);
+    } else {
+      setEditBrand(true);
     }
     setDrawerOpen(true);
   }
@@ -139,10 +139,11 @@ export default function KeywordsManager() {
     const list = buildLargeSuggestions(brandName, brandDomain);
     setSuggestions(list);
     syncSelectionToBox(list);
+    setEditBrand(false);
     setLimitHit(false);
   }
 
-  // Keywords already in the box that are NOT part of this suggestion batch — always preserved.
+  // Box keywords that are not part of this batch — always preserved & counted.
   const manualKeywords = useMemo(
     () => keywords.filter((k) => !suggestionKeySet.has(k.toLowerCase())),
     [keywords, suggestionKeySet],
@@ -152,6 +153,7 @@ export default function KeywordsManager() {
 
   function toggleSuggestion(s: Suggestion) {
     const key = s.keyword.toLowerCase();
+    if (keywordsLower.has(key)) return; // Active keywords are locked (remove via the pill)
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
@@ -183,7 +185,7 @@ export default function KeywordsManager() {
     return [...map.entries()];
   }, [filtered]);
 
-  function selectAllThatFit() {
+  function selectAll() {
     setSelected((prev) => {
       const next = new Set(prev);
       let room = MAX_KEYWORDS - manualKeywords.length - next.size;
@@ -203,37 +205,20 @@ export default function KeywordsManager() {
   }
 
   function clearSelection() {
-    setSelected(new Set());
+    // Keep Active (already-in-box) keywords checked; only clear new picks.
+    syncSelectionToBox(suggestions);
     setLimitHit(false);
   }
 
   function applyDrawer() {
+    // Additive only: add the newly-selected suggestions that aren't already in the box.
     const chosen = suggestions
-      .filter((s) => selected.has(s.keyword.toLowerCase()))
+      .filter((s) => selected.has(s.keyword.toLowerCase()) && !keywordsLower.has(s.keyword.toLowerCase()))
       .map((s) => s.keyword);
-
-    const merged = [...manualKeywords, ...chosen];
-    const seen = new Set<string>();
-    const deduped = merged.filter((k) => {
-      const l = k.toLowerCase();
-      if (seen.has(l)) return false;
-      seen.add(l);
-      return true;
-    });
-
-    if (deduped.length > MAX_KEYWORDS) {
-      setKeywords(deduped.slice(0, MAX_KEYWORDS));
-      setError(
-        `You can monitor up to ${MAX_KEYWORDS} keywords on your plan. Some keywords were not added.`,
-      );
-    } else {
-      setKeywords(deduped);
-      setError(null);
-    }
+    addKeywords(chosen);
     setDrawerOpen(false);
   }
 
-  // Esc closes the drawer
   useEffect(() => {
     if (!drawerOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -245,177 +230,117 @@ export default function KeywordsManager() {
 
   const showError = error !== null || overLimit;
   const selectedCount = selected.size;
-
-  // ---------- shared keyword box ----------
-  const keywordBox = (
-    <div
-      onClick={() => inputRef.current?.focus()}
-      className={[
-        "relative min-h-[100px] cursor-text rounded-[6px] bg-field p-[8px] pb-[44px] transition-colors",
-        "border-2",
-        showError ? "border-danger" : focused ? "border-save" : "border-transparent",
-      ].join(" ")}
-    >
-      <div className="flex flex-wrap items-center gap-[5px]">
-        {keywords.map((kw, i) => (
-          <span
-            key={`${kw}-${i}`}
-            className="inline-flex items-center gap-[2px] rounded-[20px] bg-pill py-[4px] pl-[8px] pr-[4px] text-[12px] font-semibold text-black"
-          >
-            {kw}
-            <button
-              type="button"
-              aria-label={`Remove ${kw}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                removeKeyword(i);
-              }}
-              className="grid size-[18px] place-items-center rounded-full text-black/70 hover:bg-black/10 hover:text-black"
-            >
-              <Close className="size-[14px]" />
-            </button>
-          </span>
-        ))}
-
-        <input
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          placeholder={keywords.length ? "Add keywords" : "Add keywords (comma separated)"}
-          aria-label="Add keywords"
-          className="min-w-[160px] flex-1 bg-transparent py-[4px] text-[12px] text-black outline-none placeholder:italic placeholder:text-black/50"
-        />
-      </div>
-
-      <button
-        type="button"
-        aria-label="Add keywords"
-        disabled={!hasInput}
-        onClick={(e) => {
-          e.stopPropagation();
-          commitInput();
-        }}
-        className={[
-          "absolute bottom-[5px] right-[5px] grid size-[32px] place-items-center rounded-[6px] border transition",
-          hasInput
-            ? "border-save bg-save text-white shadow-sm hover:bg-[#2b7de0]"
-            : "cursor-not-allowed border-edge bg-white text-black/30",
-        ].join(" ")}
-      >
-        <Plus className="size-[20px]" />
-      </button>
-
-      <span
-        className={[
-          "absolute bottom-[12px] right-[46px] text-[11px] tabular-nums",
-          atLimit ? "font-bold text-danger" : "text-black/45",
-        ].join(" ")}
-      >
-        {keywords.length} / {MAX_KEYWORDS}
-      </span>
-    </div>
-  );
-
-  const footer = showError ? (
-    <p className="text-[12px] font-medium text-danger" role="alert">
-      {error ??
-        `You have ${keywords.length} keywords. Only ${MAX_KEYWORDS} can be monitored on your plan — remove some to continue.`}
-    </p>
-  ) : (
-    <p className="flex flex-wrap gap-[4px] text-[12px] text-black">
-      Up to {MAX_KEYWORDS} keywords can be monitored with your plan. Contact our sales team to
-      upgrade to monitor more.
-      <a className="text-link hover:underline" href="#">
-        Contact now
-      </a>
-    </p>
+  const newPicks = useMemo(
+    () => suggestions.filter((s) => selected.has(s.keyword.toLowerCase()) && !keywordsLower.has(s.keyword.toLowerCase())).length,
+    [suggestions, selected, keywordsLower],
   );
 
   return (
     <div className="flex flex-col gap-[10px]">
-      {variant === "inline" ? (
-        /* ------------------------- INLINE VARIANT ------------------------- */
-        showGenerator ? (
-          <div className="flex flex-wrap items-start gap-[16px]">
-            <label className="flex w-[260px] max-w-full flex-col gap-[8px]">
-              <span className="text-[12px] font-bold text-black">Brand name</span>
-              <input
-                value={brandName}
-                onChange={(e) => setBrandName(e.target.value)}
-                placeholder="Enter brand name"
-                className="min-h-[32px] rounded-[6px] bg-field px-[8px] py-[7px] text-[12px] text-black outline-none placeholder:not-italic placeholder:text-black/50 focus:ring-2 focus:ring-save/40"
-              />
-            </label>
-            <label className="flex w-[260px] max-w-full flex-col gap-[8px]">
-              <span className="text-[12px] font-bold text-black">Brand domain</span>
-              <input
-                value={brandDomain}
-                onChange={(e) => setBrandDomain(e.target.value)}
-                placeholder="Enter brand domain"
-                aria-invalid={domainError}
-                className={[
-                  "min-h-[32px] rounded-[6px] bg-field px-[8px] py-[7px] text-[12px] text-black outline-none placeholder:not-italic placeholder:text-black/50 focus:ring-2",
-                  domainError ? "ring-1 ring-danger focus:ring-danger/50" : "focus:ring-save/40",
-                ].join(" ")}
-              />
-              {domainError && (
-                <span className="text-[11px] text-danger">Enter a valid domain, e.g. acme.com</span>
-              )}
-            </label>
-            <div className="flex flex-col gap-[8px]">
-              <span className="hidden h-[18px] md:block" aria-hidden />
+      {/* Trigger */}
+      <div>
+        <button
+          type="button"
+          onClick={openDrawer}
+          className="inline-flex min-h-[32px] items-center rounded-[6px] bg-edge px-[12px] py-[8px] font-display text-[12px] font-bold text-ink shadow-[0px_1px_0.5px_rgba(0,0,0,0.14)] transition hover:bg-[#d2d2d2]"
+        >
+          {suggestions.length ? "Edit keyword suggestions" : "Generate keywords"}
+        </button>
+      </div>
+
+      {/* Keyword box */}
+      <div
+        onClick={() => inputRef.current?.focus()}
+        className={[
+          "relative min-h-[100px] cursor-text rounded-[6px] bg-field p-[8px] pb-[44px] transition-colors",
+          "border-2",
+          showError ? "border-danger" : focused ? "border-save" : "border-transparent",
+        ].join(" ")}
+      >
+        <div className="flex flex-wrap items-center gap-[5px]">
+          {keywords.map((kw, i) => (
+            <span
+              key={`${kw}-${i}`}
+              className="inline-flex items-center gap-[2px] rounded-[20px] bg-pill py-[4px] pl-[8px] pr-[4px] text-[12px] font-semibold text-black"
+            >
+              {kw}
               <button
                 type="button"
-                onClick={handleGenerateInline}
-                disabled={!canGenerate}
-                className="inline-flex min-h-[32px] items-center rounded-[6px] bg-edge px-[12px] py-[8px] font-display text-[12px] font-bold text-ink shadow-[0px_1px_0.5px_rgba(0,0,0,0.14)] transition hover:bg-[#d2d2d2] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-edge"
+                aria-label={`Remove ${kw}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeKeyword(i);
+                }}
+                className="grid size-[18px] place-items-center rounded-full text-black/70 hover:bg-black/10 hover:text-black"
               >
-                Generate keywords
+                <Close className="size-[14px]" />
               </button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[6px] rounded-[6px] bg-field px-[12px] py-[8px] text-[12px] text-black">
-            <span className="text-black/70">
-              Suggestions generated from{" "}
-              <span className="font-semibold text-black">{brandName}</span>
-              {" · "}
-              {cleanDomain(brandDomain)}
             </span>
-            <button
-              type="button"
-              onClick={() => setShowGenerator(true)}
-              className="font-semibold text-link hover:underline"
-            >
-              Edit brand details
-            </button>
-          </div>
-        )
-      ) : (
-        /* ------------------------- DRAWER VARIANT ------------------------- */
-        <div className="flex flex-wrap items-center gap-[12px]">
-          <button
-            type="button"
-            onClick={openDrawer}
-            className="inline-flex min-h-[32px] items-center rounded-[6px] bg-edge px-[12px] py-[8px] font-display text-[12px] font-bold text-ink shadow-[0px_1px_0.5px_rgba(0,0,0,0.14)] transition hover:bg-[#d2d2d2]"
-          >
-            {suggestions.length ? "Edit keyword suggestions" : "Generate keywords"}
-          </button>
-        </div>
-      )}
+          ))}
 
-      {keywordBox}
-      {footer}
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            placeholder={keywords.length ? "Add keywords" : "Add keywords (comma separated)"}
+            aria-label="Add keywords"
+            className="min-w-[160px] flex-1 bg-transparent py-[4px] text-[12px] text-black outline-none placeholder:italic placeholder:text-black/50"
+          />
+        </div>
+
+        <button
+          type="button"
+          aria-label="Add keywords"
+          disabled={!hasInput}
+          onClick={(e) => {
+            e.stopPropagation();
+            commitInput();
+          }}
+          className={[
+            "absolute bottom-[5px] right-[5px] grid size-[32px] place-items-center rounded-[6px] border transition",
+            hasInput
+              ? "border-save bg-save text-white shadow-sm hover:bg-[#2b7de0]"
+              : "cursor-not-allowed border-edge bg-white text-black/30",
+          ].join(" ")}
+        >
+          <Plus className="size-[20px]" />
+        </button>
+
+        <span
+          className={[
+            "absolute bottom-[12px] right-[46px] text-[11px] tabular-nums",
+            atLimit ? "font-bold text-danger" : "text-black/45",
+          ].join(" ")}
+        >
+          {keywords.length} / {MAX_KEYWORDS}
+        </span>
+      </div>
+
+      {/* Helper / error footer */}
+      {showError ? (
+        <p className="text-[12px] font-medium text-danger" role="alert">
+          {error ??
+            `You have ${keywords.length} keywords. Only ${MAX_KEYWORDS} can be monitored on your plan — remove some to continue.`}
+        </p>
+      ) : (
+        <p className="flex flex-wrap gap-[4px] text-[12px] text-black">
+          Up to {MAX_KEYWORDS} keywords can be monitored with your plan. Contact our sales team to
+          upgrade to monitor more.
+          <a className="text-link hover:underline" href="#">
+            Contact now
+          </a>
+        </p>
+      )}
 
       {pending.length > 1 && hasInput && (
         <p className="text-[11px] text-black/50">Press Enter to add {pending.length} keywords.</p>
       )}
 
       {/* ------------------------- SLIDE-OUT DRAWER ------------------------- */}
-      {variant === "drawer" && drawerOpen && (
+      {drawerOpen && (
         <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label="Generate keywords">
           <div
             className="absolute inset-0 bg-black/40 animate-[fadeIn_120ms_ease-out]"
@@ -440,42 +365,59 @@ export default function KeywordsManager() {
               </button>
             </div>
 
-            {/* Brand inputs */}
-            <div className="flex flex-col gap-[12px] border-b border-rule px-[20px] py-[16px]">
-              <label className="flex flex-col gap-[6px]">
-                <span className="text-[12px] font-bold text-black">Brand name</span>
-                <input
-                  value={brandName}
-                  onChange={(e) => setBrandName(e.target.value)}
-                  placeholder="Enter brand name"
-                  className="min-h-[34px] rounded-[6px] bg-field px-[10px] py-[7px] text-[12px] text-black outline-none placeholder:not-italic placeholder:text-black/50 focus:ring-2 focus:ring-save/40"
-                />
-              </label>
-              <label className="flex flex-col gap-[6px]">
-                <span className="text-[12px] font-bold text-black">Brand domain</span>
-                <input
-                  value={brandDomain}
-                  onChange={(e) => setBrandDomain(e.target.value)}
-                  placeholder="Enter brand domain"
-                  aria-invalid={domainError}
-                  className={[
-                    "min-h-[34px] rounded-[6px] bg-field px-[10px] py-[7px] text-[12px] text-black outline-none focus:ring-2",
-                    domainError ? "ring-1 ring-danger focus:ring-danger/50" : "focus:ring-save/40",
-                  ].join(" ")}
-                />
-                {domainError && (
-                  <span className="text-[11px] text-danger">Enter a valid domain, e.g. acme.com</span>
-                )}
-              </label>
-              <button
-                type="button"
-                onClick={generateInDrawer}
-                disabled={!canGenerate}
-                className="inline-flex min-h-[34px] items-center justify-center self-start rounded-[6px] bg-edge px-[14px] font-display text-[12px] font-bold text-ink shadow-[0px_1px_0.5px_rgba(0,0,0,0.14)] transition hover:bg-[#d2d2d2] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-edge"
-              >
-                {suggestions.length ? "Regenerate suggestions" : "Generate keywords"}
-              </button>
-            </div>
+            {/* Brand inputs (collapsible) */}
+            {editBrand ? (
+              <div className="flex flex-col gap-[12px] border-b border-rule px-[20px] py-[16px]">
+                <label className="flex flex-col gap-[6px]">
+                  <span className="text-[12px] font-bold text-black">Brand name</span>
+                  <input
+                    value={brandName}
+                    onChange={(e) => setBrandName(e.target.value)}
+                    placeholder="Enter brand name"
+                    className="min-h-[34px] rounded-[6px] bg-field px-[10px] py-[7px] text-[12px] text-black outline-none placeholder:not-italic placeholder:text-black/50 focus:ring-2 focus:ring-save/40"
+                  />
+                </label>
+                <label className="flex flex-col gap-[6px]">
+                  <span className="text-[12px] font-bold text-black">Brand domain</span>
+                  <input
+                    value={brandDomain}
+                    onChange={(e) => setBrandDomain(e.target.value)}
+                    placeholder="Enter brand domain"
+                    aria-invalid={domainError}
+                    className={[
+                      "min-h-[34px] rounded-[6px] bg-field px-[10px] py-[7px] text-[12px] text-black outline-none focus:ring-2",
+                      domainError ? "ring-1 ring-danger focus:ring-danger/50" : "focus:ring-save/40",
+                    ].join(" ")}
+                  />
+                  {domainError && (
+                    <span className="text-[11px] text-danger">Enter a valid domain, e.g. acme.com</span>
+                  )}
+                </label>
+                <button
+                  type="button"
+                  onClick={generateInDrawer}
+                  disabled={!canGenerate}
+                  className="inline-flex min-h-[34px] items-center justify-center self-start rounded-[6px] bg-edge px-[14px] font-display text-[12px] font-bold text-ink shadow-[0px_1px_0.5px_rgba(0,0,0,0.14)] transition hover:bg-[#d2d2d2] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-edge"
+                >
+                  {suggestions.length ? "Regenerate suggestions" : "Generate keywords"}
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-[10px] border-b border-rule px-[20px] py-[12px]">
+                <span className="text-[12px] text-black/70">
+                  Generating from <span className="font-semibold text-black">{brandName}</span>
+                  {" · "}
+                  {cleanDomain(brandDomain)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEditBrand(true)}
+                  className="shrink-0 text-[12px] font-semibold text-link hover:underline"
+                >
+                  Edit
+                </button>
+              </div>
+            )}
 
             {suggestions.length > 0 ? (
               <>
@@ -492,12 +434,15 @@ export default function KeywordsManager() {
                   </div>
                   <div className="flex items-center justify-between text-[12px]">
                     <span className="text-black/60">
-                      <span className="font-semibold text-black">{selectedCount}</span> selected
+                      <span className="font-semibold text-black">{selectedCount}</span> selected ·{" "}
+                      <span className={slotsLeft <= 0 ? "font-semibold text-danger" : ""}>
+                        {Math.max(0, slotsLeft)} of {MAX_KEYWORDS} slots left
+                      </span>
                     </span>
                     <span className="flex items-center gap-[12px]">
                       <button
                         type="button"
-                        onClick={selectAllThatFit}
+                        onClick={selectAll}
                         className="font-semibold text-link hover:underline"
                       >
                         Select All
@@ -506,7 +451,7 @@ export default function KeywordsManager() {
                         type="button"
                         onClick={clearSelection}
                         className="text-link hover:underline disabled:text-black/30 disabled:no-underline"
-                        disabled={selectedCount === 0}
+                        disabled={newPicks === 0}
                       >
                         Clear
                       </button>
@@ -514,7 +459,7 @@ export default function KeywordsManager() {
                   </div>
                   {limitHit && (
                     <p className="text-[11px] font-medium text-danger">
-                      You&apos;ve reached the {MAX_KEYWORDS}-keyword limit. Deselect some to add others.
+                      You&apos;ve reached the {MAX_KEYWORDS}-keyword limit. Remove some keywords to add others.
                     </p>
                   )}
                 </div>
@@ -534,22 +479,26 @@ export default function KeywordsManager() {
                       <ul className="flex flex-col">
                         {items.map((s) => {
                           const key = s.keyword.toLowerCase();
-                          const checked = selected.has(key);
-                          const added = keywordsLower.has(key);
+                          const active = keywordsLower.has(key);
+                          const checked = active || selected.has(key);
                           const blocked = !checked && slotsLeft <= 0;
+                          const disabled = active || blocked;
                           return (
                             <li key={key}>
                               <label
+                                title={active ? "Already in your keywords — remove it from the box to deselect" : undefined}
                                 className={[
-                                  "flex cursor-pointer items-center gap-[10px] rounded-[6px] px-[6px] py-[7px] text-[12px]",
-                                  blocked ? "opacity-40" : "hover:bg-field",
+                                  "flex items-center gap-[10px] rounded-[6px] px-[6px] py-[7px] text-[12px]",
+                                  active ? "cursor-default" : blocked ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:bg-field",
                                 ].join(" ")}
                               >
                                 <span
                                   className={[
                                     "grid size-[16px] shrink-0 place-items-center rounded-[4px] border transition",
                                     checked
-                                      ? "border-save bg-save text-white"
+                                      ? active
+                                        ? "border-[#8fb6ec] bg-[#8fb6ec] text-white"
+                                        : "border-save bg-save text-white"
                                       : "border-[#bbb] bg-white text-transparent",
                                   ].join(" ")}
                                 >
@@ -559,11 +508,11 @@ export default function KeywordsManager() {
                                   type="checkbox"
                                   className="sr-only"
                                   checked={checked}
-                                  disabled={blocked}
+                                  disabled={disabled}
                                   onChange={() => toggleSuggestion(s)}
                                 />
                                 <span className="flex-1 text-black">{s.keyword}</span>
-                                {added && (
+                                {active && (
                                   <span className="rounded-full bg-pill px-[8px] py-[2px] text-[10px] font-semibold text-black/70">
                                     Active
                                   </span>
@@ -593,9 +542,10 @@ export default function KeywordsManager() {
                     <button
                       type="button"
                       onClick={applyDrawer}
-                      className="rounded-[6px] bg-save px-[16px] py-[8px] text-[12px] font-semibold text-white hover:bg-[#2b7de0]"
+                      disabled={newPicks === 0}
+                      className="rounded-[6px] bg-save px-[16px] py-[8px] text-[12px] font-semibold text-white transition hover:bg-[#2b7de0] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-save"
                     >
-                      Update keywords ({selectedCount})
+                      Add {newPicks > 0 ? `${newPicks} ` : ""}keyword{newPicks === 1 ? "" : "s"}
                     </button>
                   </div>
                 </div>
