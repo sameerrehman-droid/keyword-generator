@@ -1,5 +1,7 @@
 import KeywordsManager from "./KeywordsManager";
-import { Back, ChevronDown, Close, Desktop, Grid, Menu, Mobile, Plus } from "./icons";
+import PolicyLists from "./PolicyLists";
+import { Row, ContactLine } from "./ui";
+import { Back, ChevronDown, Close, Desktop, Grid, Menu, Mobile } from "./icons";
 
 const NAV = ["Dashboard", "Partner Alerts", "Alerts", "Policies", "Email Templates"];
 
@@ -14,45 +16,6 @@ const SEARCH_ENGINES = [
   "Naver",
   "Haosou",
 ];
-
-function Row({
-  label,
-  description,
-  children,
-  alignTop = false,
-}: {
-  label: string;
-  description?: React.ReactNode;
-  children: React.ReactNode;
-  alignTop?: boolean;
-}) {
-  return (
-    <div
-      className={`flex flex-col gap-[20px] border-b border-rule py-[30px] md:grid md:grid-cols-[minmax(0,320px)_minmax(0,1fr)] md:gap-[60px] ${
-        alignTop ? "md:items-start" : "md:items-center"
-      }`}
-    >
-      <div className="flex flex-col gap-[15px]">
-        <p className="text-[12px] font-bold text-black">{label}</p>
-        {description && (
-          <p className="text-[12px] leading-[18px] text-black">{description}</p>
-        )}
-      </div>
-      <div>{children}</div>
-    </div>
-  );
-}
-
-function ContactLine({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="flex flex-wrap gap-[4px] text-[12px] text-black">
-      {children}
-      <a className="text-link hover:underline" href="#">
-        Contact now
-      </a>
-    </p>
-  );
-}
 
 function CheckTile({ label, devices = false }: { label: string; devices?: boolean }) {
   return (
@@ -196,22 +159,7 @@ export default function Home() {
               <KeywordsManager />
             </Row>
 
-            <Row
-              label="Domains"
-              alignTop
-              description="List all domains that you own that we should monitor. All subdomains will automatically be associated with any of the domains on a policy."
-            >
-              <div className="relative min-h-[100px] rounded-[6px] bg-field p-[8px]">
-                <span className="text-[12px] italic text-black/50">Add domains</span>
-                <button
-                  type="button"
-                  aria-label="Add domain"
-                  className="absolute bottom-[5px] right-[5px] grid size-[32px] place-items-center rounded-[6px] border border-edge bg-white text-black/40"
-                >
-                  <Plus className="size-[20px]" />
-                </button>
-              </div>
-            </Row>
+            <PolicyLists />
 
             <div className="flex justify-end pt-[20px]">
               <button
